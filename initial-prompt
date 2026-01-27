@@ -1,0 +1,180 @@
+You are a Principal/Senior .NET Engineer. Build a production-grade, ultra low-latency API Gateway using C# (.NET 8+) and YARP.
+
+CORE CONCEPTS (MUST MODEL)
+We have a registry of gateway “Services” grouped under a Product.
+Example:
+- Product: SeaBaaS
+  - Service: PayHub
+    - BasePath: /payhub
+    - Version: v1
+    - Endpoints:
+        - name-enquiry
+        - transfer
+        - balance-enquiry
+
+You MUST implement a clear hierarchy and data model:
+- Product
+- Service (belongs to Product)
+- ServiceVersion (optional but recommended if you need multiple versions)
+- Endpoint (belongs to Service + Version)
+- RouteMapping (maps endpoint to YARP route/cluster)
+- EndpointPolicy (payload expectations, authz rules, crypto algorithm, timeout, retries, rate limit, headers)
+
+STRUCTURE: Product, Service, BasePath, Version (EXPLICIT)
+Each Service MUST have at least:
+- ProductName (string)
+- ServiceName (string)
+- BasePath (string) e.g. "/payhub"
+- Version (string) e.g. "v1"
+- Description (string)
+- OwnerTeam (string)
+- IsEnabled (bool)
+- Environment (dev/uat/prod)
+- Upstream:
+  - ClusterId
+  - Destinations (url list)
+  - LoadBalancingPolicy (RoundRobin/LeastRequests)
+  - HealthChecks (active + passive)
+- Observability:
+  - EnableTracing
+  - EnableMetrics
+  - LogSampling
+- Security:
+  - RequiresJwt (bool)
+  - RequiredClaims/Scopes (per service default)
+  - AllowedClients (optional allow list)
+- Caching:
+  - CacheEnabled (bool)
+  - CacheTtlSeconds (int)
+  - CacheKeyTemplate (string)
+- Kafka Eventing:
+  - EmitEvents (bool)
+  - TopicPrefix (string)
+  - EventSchemaVersion (string)
+
+Each Endpoint MUST have:
+- EndpointName (string) e.g. "transfer"
+- HttpMethod(s) (GET/POST/PUT/PATCH)
+- RelativePath (string) e.g. "/transfer"
+- UpstreamPathTemplate (string) if different
+- IsEnabled (bool)
+- TimeoutMs (int)
+- Retries (optional, idempotent-only)
+- RateLimitPolicy (per endpoint)
+- HeadersToAdd/Remove
+- Request/Response size limits
+
+PAYLOAD HANDLING CONTRACT (MUST FOLLOW)
+- Client uses JWT in header: Authorization: Bearer <token>
+- Encrypted inbound payload is always JSON: { "data": "<encrypted payload>" }
+- EndpointPolicy controls payload handling:
+  - If endpoint expects ENCRYPTED: pass-through, do NOT touch body.
+  - If endpoint expects DECRYPTED/PLAIN: decrypt inbound "data" and forward plaintext body.
+
+CRYPTO: CONFIGURABLE PER SERVICE/ENDPOINT
+- Algorithm MUST be configurable per Service (default) and overridable per Endpoint:
+  - Supported algorithms: "AES_256_GCM", "AES_256_CBC_HMAC", "NONE"
+- CryptoConfig fields:
+  - Algorithm
+  - KeySource (UserProfileKey | ServiceKey | EndpointKey)
+  - Encoding (Base64/Hex)
+  - RequireIv (true/false)
+  - IvSource (UserProfileIv | ServiceIv | EndpointIv)
+  - PayloadWrapperFieldName (always "data")
+- Keys/IV per user profile are stored in DB; service-level defaults also stored in DB.
+- The gateway must resolve the effective crypto config in this order:
+  Endpoint override -> Service default -> Global default
+
+AUTHORIZATION (MUST ENFORCE BEFORE PROXY)
+- Validate JWT signature/issuer/audience/expiry.
+- Resolve Client/User identity from JWT claim (e.g., "sub" or "client_id").
+- Ensure the JWT (and client) is permitted to call the specific Product/Service/Endpoint:
+  - Allowlist in DB: client -> endpoint permissions
+  - Required scopes/claims per endpoint
+- If not allowed: 403 (never forward).
+
+DATA STORES / INFRA
+- PostgreSQL: source of truth for Product/Service/Endpoint registry, policies, clients, keys/IV, permissions.
+- ValKey (Redis-compatible): caching + fast policy/user lookups to reduce DB hits in hot path.
+- Kafka: optional event emission for audit/telemetry/business events when enabled by policy (event-driven support).
+
+PERFORMANCE REQUIREMENTS (VERY IMPORTANT)
+- Very low latency:
+  - Cache policy resolution in ValKey with TTL + local in-memory cache (IMemoryCache) if safe.
+  - Precompile lookups to dictionaries (keyed by routeId or endpointId).
+  - Avoid per-request DB calls; only fall back when cache miss.
+  - Minimal allocations, no LINQ in hot path, System.Text.Json source-generated contexts if appropriate.
+  - Use pooled buffers for decrypt/encrypt transforms with size caps.
+
+YARP REQUIREMENTS
+- Use YARP Routes/Clusters for proxying; dynamically build routes from DB registry at startup and refresh periodically (background refresh) OR support hot reload using a config provider.
+- Use custom transforms:
+  - DecryptTransform (only when endpoint expects plaintext)
+  - PassThroughTransform (no-op)
+- Support load balancing, health checks, per-route timeouts.
+
+OBSERVABILITY
+- OpenTelemetry tracing + metrics with route/service/endpoint tags.
+- Correlation ID.
+- Structured logs with PII-safe redaction (never log decrypted payload or secrets).
+
+DELIVERABLES
+1) Solution layout:
+   - src/Gateway.Api
+   - src/Gateway.Core
+   - src/Gateway.Infrastructure
+   - src/Gateway.Data (EF Core or Dapper; prefer Dapper for performance)
+   - tests/Gateway.Tests
+
+2) Implement:
+- DB schema + migrations:
+  - products, services, endpoints
+  - clients, client_permissions
+  - user_profiles (or clients table), keys, ivs
+  - service_crypto_defaults, endpoint_crypto_overrides
+- Data access (Dapper) repositories
+- Cache layer (ValKey) for:
+  - endpoint policy by route key
+  - client permissions
+  - crypto material lookup references (not raw secrets in logs)
+- Policy resolution pipeline:
+  - Match incoming request -> determine Product/Service/Endpoint
+  - AuthZ check
+  - Determine effective crypto algorithm + key/iv sources
+  - Apply transform and proxy
+
+3) Kafka:
+- When EmitEvents is enabled for service/endpoint:
+  - Publish a lightweight event: timestamp, product, service, endpoint, clientId, correlationId, upstreamStatus, latencyMs
+  - No sensitive payload content.
+  - Use Confluent.Kafka .NET client (or a clean abstraction).
+
+4) Provide example seed data:
+- Product: SeaBaaS
+- Service: PayHub, BasePath /payhub, Version v1
+- Endpoints: name-enquiry, transfer, balance-enquiry
+- Two clients with different permissions and keys/IV
+- name-enquiry expects ENCRYPTED (pass-through)
+- transfer expects DECRYPTED (gateway decrypts)
+- balance-enquiry expects DECRYPTED
+- PayHub default algorithm AES_256_GCM, but transfer overrides to AES_256_CBC_HMAC (example)
+
+5) Provide runnable code:
+- Program.cs with:
+  - JwtBearer auth + authorization policies
+  - YARP reverse proxy
+  - Dapper + Npgsql
+  - ValKey client
+  - Optional Kafka producer
+  - Hosted service to refresh registry/policies into cache
+- README:
+  - How to run Postgres + ValKey + Kafka via docker-compose
+  - How to run gateway
+  - Example curl calls to PayHub endpoints
+
+IMPLEMENTATION CHOICES
+- Prefer Dapper over EF Core for low latency.
+- Use BackgroundService for periodic refresh (e.g., every 30s) + on-demand refresh endpoint (admin-protected).
+- Ensure thread safety in caches and refresh swaps (use immutable snapshots).
+
+Now generate the complete multi-file code with best practices and comments explaining performance/security decisions.
