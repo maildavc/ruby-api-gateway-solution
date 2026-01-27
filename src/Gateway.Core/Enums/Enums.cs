@@ -3,6 +3,7 @@ namespace Gateway.Core.Enums;
 public enum CryptoAlgorithm
 {
     NONE,
+    AES_128_CBC,
     AES_256_GCM,
     AES_256_CBC_HMAC
 }

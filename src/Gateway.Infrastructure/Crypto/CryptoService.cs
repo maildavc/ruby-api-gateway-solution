@@ -37,6 +37,7 @@ public class CryptoService : ICryptoService
 
         return algorithm switch
         {
+            CryptoAlgorithm.AES_128_CBC => DecryptAesCbc(cipherBytes, keyBytes, ivBytes!),
             CryptoAlgorithm.AES_256_GCM => DecryptAesGcm(cipherBytes, keyBytes, ivBytes!),
             CryptoAlgorithm.AES_256_CBC_HMAC => DecryptAesCbcHmac(cipherBytes, keyBytes, ivBytes!),
             _ => throw new NotSupportedException($"Algorithm {algorithm} not supported")
@@ -60,6 +61,7 @@ public class CryptoService : ICryptoService
 
         var cipherBytes = algorithm switch
         {
+            CryptoAlgorithm.AES_128_CBC => EncryptAesCbc(plainData, keyBytes, ivBytes!),
             CryptoAlgorithm.AES_256_GCM => EncryptAesGcm(plainData, keyBytes, ivBytes!),
             CryptoAlgorithm.AES_256_CBC_HMAC => EncryptAesCbcHmac(plainData, keyBytes, ivBytes!),
             _ => throw new NotSupportedException($"Algorithm {algorithm} not supported")
@@ -210,6 +212,32 @@ public class CryptoService : ICryptoService
 
         using var decryptor = aes.CreateDecryptor();
         return decryptor.TransformFinalBlock(cipher, 0, cipher.Length);
+    }
+
+    private byte[] DecryptAesCbc(byte[] ciphertext, byte[] key, byte[] iv)
+    {
+        // Standard AES-CBC decryption (for AES-128 with 16-byte key)
+        using var aes = Aes.Create();
+        aes.Key = key;
+        aes.IV = iv;
+        aes.Mode = CipherMode.CBC;
+        aes.Padding = PaddingMode.PKCS7;
+
+        using var decryptor = aes.CreateDecryptor();
+        return decryptor.TransformFinalBlock(ciphertext, 0, ciphertext.Length);
+    }
+
+    private byte[] EncryptAesCbc(byte[] plaintext, byte[] key, byte[] iv)
+    {
+        // Standard AES-CBC encryption (for AES-128 with 16-byte key)
+        using var aes = Aes.Create();
+        aes.Key = key;
+        aes.IV = iv;
+        aes.Mode = CipherMode.CBC;
+        aes.Padding = PaddingMode.PKCS7;
+
+        using var encryptor = aes.CreateEncryptor();
+        return encryptor.TransformFinalBlock(plaintext, 0, plaintext.Length);
     }
 
     private byte[] EncryptAesCbcHmac(byte[] plaintext, byte[] key, byte[] iv)
