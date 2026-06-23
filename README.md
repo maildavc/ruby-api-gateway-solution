@@ -1,6 +1,6 @@
-# API Gateway - Production-Grade Low-Latency Solution
+# SeaBaasAPIGateway - Production-Grade Low-Latency Solution
 
-A high-performance API Gateway built with .NET 8, YARP, PostgreSQL, ValKey (Redis), and Kafka for ultra-low latency request routing with encryption/decryption, authorization, and observability.
+A high-performance SeaBaasAPIGateway built with .NET 8, YARP, PostgreSQL, ValKey (Redis), and Kafka for ultra-low latency request routing with encryption/decryption, authorization, and observability.
 
 ## Features
 
@@ -25,7 +25,7 @@ A high-performance API Gateway built with .NET 8, YARP, PostgreSQL, ValKey (Redi
        │ JWT + Encrypted Payload
        ↓
 ┌──────────────────────────────────────────────┐
-│           API Gateway                         │
+│        SeaBaasAPIGateway                      │
 │  ┌────────────────────────────────────────┐  │
 │  │  1. JWT Authentication                  │  │
 │  │  2. Authorization (Client Permissions)  │  │

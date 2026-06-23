@@ -19,13 +19,13 @@ public class ProductRepository : IProductRepository
         _logger = logger;
     }
 
-    public async Task<Product?> GetByIdAsync(int id)
+    public async Task<Product?> GetByIdAsync(Guid id)
     {
         const string sql = @"
             SELECT id AS Id, name AS Name, description AS Description, 
                    owner_team AS OwnerTeam, is_enabled AS IsEnabled,
                    created_at AS CreatedAt, updated_at AS UpdatedAt
-            FROM products 
+            FROM ""SeaBaasAPIGateway-Core"".products 
             WHERE id = @Id";
 
         using var connection = new NpgsqlConnection(_connectionString);
@@ -38,7 +38,7 @@ public class ProductRepository : IProductRepository
             SELECT id AS Id, name AS Name, description AS Description, 
                    owner_team AS OwnerTeam, is_enabled AS IsEnabled,
                    created_at AS CreatedAt, updated_at AS UpdatedAt
-            FROM products 
+            FROM ""SeaBaasAPIGateway-Core"".products 
             WHERE name = @Name AND is_enabled = true";
 
         using var connection = new NpgsqlConnection(_connectionString);
@@ -51,11 +51,11 @@ public class ProductRepository : IProductRepository
             ? @"SELECT id AS Id, name AS Name, description AS Description, 
                        owner_team AS OwnerTeam, is_enabled AS IsEnabled,
                        created_at AS CreatedAt, updated_at AS UpdatedAt
-                FROM products WHERE is_enabled = true"
+                FROM ""SeaBaasAPIGateway-Core"".products WHERE is_enabled = true"
             : @"SELECT id AS Id, name AS Name, description AS Description, 
                        owner_team AS OwnerTeam, is_enabled AS IsEnabled,
                        created_at AS CreatedAt, updated_at AS UpdatedAt
-                FROM products";
+                FROM ""SeaBaasAPIGateway-Core"".products";
 
         using var connection = new NpgsqlConnection(_connectionString);
         return await connection.QueryAsync<Product>(sql);

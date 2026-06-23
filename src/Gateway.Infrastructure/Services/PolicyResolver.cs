@@ -15,6 +15,7 @@ namespace Gateway.Infrastructure.Services;
 /// </summary>
 public class PolicyResolver : IPolicyResolver
 {
+    private const string GatewayPathPrefix = "/gateway";
     private readonly IServiceRepository _serviceRepo;
     private readonly IEndpointRepository _endpointRepo;
     private readonly IProductRepository _productRepo;
@@ -53,13 +54,18 @@ public class PolicyResolver : IPolicyResolver
         if (_policySnapshot.TryGetValue(routeKey, out var snapshotPolicy))
         {
             // Cache it for next time
-            await _cache.SetPolicyAsync(routeKey, snapshotPolicy, TimeSpan.FromMinutes(10));
+            await _cache.SetPolicyAsync(routeKey, snapshotPolicy, TimeSpan.FromHours(1));
             return snapshotPolicy;
         }
 
         // Not found - may need refresh
         _logger.LogWarning("Policy not found for route {RouteKey}, triggering refresh", routeKey);
         return null;
+    }
+
+    public IDictionary<string, EndpointPolicy> GetAllPolicies()
+    {
+        return _policySnapshot;
     }
 
     public async Task RefreshPoliciesAsync()
@@ -93,13 +99,13 @@ public class PolicyResolver : IPolicyResolver
                     var methods = endpoint.HttpMethod.Split(',', StringSplitOptions.RemoveEmptyEntries);
                     foreach (var method in methods)
                     {
-                        var fullPath = $"{service.BasePath}{endpoint.RelativePath}";
+                        var fullPath = $"{GatewayPathPrefix}{service.BasePath}{endpoint.RelativePath}";
                         var routeKey = $"{method.Trim().ToUpperInvariant()}:{fullPath}";
                         
                         newSnapshot[routeKey] = policy;
                         
                         // Also cache in Redis
-                        await _cache.SetPolicyAsync(routeKey, policy, TimeSpan.FromMinutes(30));
+                        await _cache.SetPolicyAsync(routeKey, policy, TimeSpan.FromHours(1));
                     }
                 }
             }
@@ -159,7 +165,9 @@ public class PolicyResolver : IPolicyResolver
             HeadersToAdd = headersToAdd,
             HeadersToRemove = headersToRemove,
             EmitEvents = service.EmitEvents,
-            TopicPrefix = service.TopicPrefix
+            TopicPrefix = service.TopicPrefix,
+            EncryptRequest = endpoint.EncryptRequest,
+            EncryptResponse = endpoint.EncryptResponse
         };
     }
 

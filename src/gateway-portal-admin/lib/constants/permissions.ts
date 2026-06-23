@@ -1,0 +1,28 @@
+export const permissions = [
+  "gateway.config.read",
+  "gateway.config.write",
+  "product.manage",
+  "service.manage",
+  "endpoint.manage",
+  "destination.manage",
+  "client.manage",
+  "client.permission.manage",
+  "user.profile.manage",
+  "key.revoke",
+  "key.rotate",
+  "key.reveal",
+  "user.manage",
+  "role.manage",
+  "group.manage",
+  "sso.manage",
+  "scim.manage",
+  "audit.read",
+  "observability.read",
+  "alerts.manage",
+  "spec.manage",
+  "announcement.manage",
+  "bulk.manage",
+  "tenant.manage",
+] as const;
+
+export type Permission = (typeof permissions)[number];

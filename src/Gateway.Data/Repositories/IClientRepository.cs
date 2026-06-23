@@ -4,7 +4,8 @@ namespace Gateway.Data.Repositories;
 
 public interface IClientRepository
 {
-    Task<Client?> GetByIdAsync(int id);
+    Task<Client?> GetByIdAsync(Guid id);
     Task<Client?> GetByClientIdAsync(string clientId);
-    Task UpdateLastAccessAsync(int id);
+    Task<IEnumerable<Client>> GetAllEnabledAsync();
+    Task UpdateLastAccessAsync(Guid id);
 }

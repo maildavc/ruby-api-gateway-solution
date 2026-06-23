@@ -67,13 +67,18 @@ public class CryptoServiceTests
         // Arrange
         var plaintext = System.Text.Encoding.UTF8.GetBytes("Secret data");
         var correctKey = Convert.ToBase64String(new byte[32]);
-        var wrongKey = Convert.ToBase64String(new byte[32]);
+        var wrongKeyBytes = new byte[32];
+        for (var i = 0; i < wrongKeyBytes.Length; i++)
+        {
+            wrongKeyBytes[i] = 0x01;
+        }
+        var wrongKey = Convert.ToBase64String(wrongKeyBytes);
         var nonce = Convert.ToBase64String(new byte[12]);
 
         var encrypted = _cryptoService.Encrypt(plaintext, CryptoAlgorithm.AES_256_GCM, correctKey, nonce, Encoding.Base64);
 
         // Act & Assert
-        Assert.Throws<System.Security.Cryptography.CryptographicException>(() =>
+        Assert.ThrowsAny<System.Security.Cryptography.CryptographicException>(() =>
         {
             _cryptoService.Decrypt(encrypted, CryptoAlgorithm.AES_256_GCM, wrongKey, nonce, Encoding.Base64);
         });

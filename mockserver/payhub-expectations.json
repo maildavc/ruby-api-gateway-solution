@@ -1,0 +1,54 @@
+[
+  {
+    "httpRequest": {
+      "method": "POST",
+      "path": "/api/v1/auth/login"
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["application/json"]
+      },
+      "body": "{\"token\":\"mock-jwt-token-abc123\",\"expiresIn\":3600,\"userId\":\"mobile-app-001\"}"
+    }
+  },
+  {
+    "httpRequest": {
+      "method": "POST",
+      "path": "/api/v1/transfer"
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["application/json"]
+      },
+      "body": "{\"status\":\"success\",\"transactionId\":\"TXN-9876543\",\"amount\":5000,\"currency\":\"NGN\"}"
+    }
+  },
+  {
+    "httpRequest": {
+      "method": "POST",
+      "path": "/api/v1/name-enquiry"
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["application/json"]
+      },
+      "body": "{\"accountName\":\"JOHN DOE\",\"accountNumber\":\"1234567890\",\"bankCode\":\"232\"}"
+    }
+  },
+  {
+    "httpRequest": {
+      "method": "POST",
+      "path": "/api/v1/balance"
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["application/json"]
+      },
+      "body": "{\"balance\":250000.00,\"currency\":\"NGN\",\"accountNumber\":\"1234567890\"}"
+    }
+  }
+]

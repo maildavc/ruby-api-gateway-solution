@@ -1,9 +1,14 @@
 -- Gateway API Database Schema
 -- PostgreSQL 15+
 
+SET search_path TO "SeaBaasAPIGateway-Core";
+
+-- Enable UUID generation
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 -- Products table
 CREATE TABLE IF NOT EXISTS products (
-    id SERIAL PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(100) NOT NULL UNIQUE,
     description TEXT NOT NULL,
     owner_team VARCHAR(100) NOT NULL,
@@ -16,8 +21,8 @@ CREATE INDEX idx_products_name ON products(name) WHERE is_enabled = true;
 
 -- Services table
 CREATE TABLE IF NOT EXISTS services (
-    id SERIAL PRIMARY KEY,
-    product_id INT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     service_name VARCHAR(100) NOT NULL,
     base_path VARCHAR(200) NOT NULL,
     version VARCHAR(20) NOT NULL,
@@ -72,8 +77,8 @@ CREATE INDEX idx_services_cluster ON services(cluster_id);
 
 -- Endpoints table
 CREATE TABLE IF NOT EXISTS endpoints (
-    id SERIAL PRIMARY KEY,
-    service_id INT NOT NULL REFERENCES services(id) ON DELETE CASCADE,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    service_id UUID NOT NULL REFERENCES services(id) ON DELETE CASCADE,
     endpoint_name VARCHAR(100) NOT NULL,
     http_method VARCHAR(50) NOT NULL, -- Can be comma-separated: GET,POST
     relative_path VARCHAR(200) NOT NULL,
@@ -109,7 +114,7 @@ CREATE INDEX idx_endpoints_path ON endpoints(service_id, relative_path);
 
 -- Clients table
 CREATE TABLE IF NOT EXISTS clients (
-    id SERIAL PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     client_id VARCHAR(100) NOT NULL UNIQUE,
     client_name VARCHAR(200) NOT NULL,
     client_secret VARCHAR(500) NOT NULL, -- BCrypt hashed
@@ -124,9 +129,9 @@ CREATE INDEX idx_clients_client_id ON clients(client_id) WHERE is_enabled = true
 
 -- Client permissions table
 CREATE TABLE IF NOT EXISTS client_permissions (
-    id SERIAL PRIMARY KEY,
-    client_id INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-    endpoint_id INT NOT NULL REFERENCES endpoints(id) ON DELETE CASCADE,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    endpoint_id UUID NOT NULL REFERENCES endpoints(id) ON DELETE CASCADE,
     is_enabled BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     expires_at TIMESTAMP,
@@ -139,9 +144,9 @@ CREATE INDEX idx_client_permissions_endpoint ON client_permissions(endpoint_id) 
 
 -- User profiles (crypto keys/IVs per client/user)
 CREATE TABLE IF NOT EXISTS user_profiles (
-    id SERIAL PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id VARCHAR(100) NOT NULL, -- ClientId or user identifier
-    service_id INT REFERENCES services(id) ON DELETE CASCADE, -- NULL means global
+    service_id UUID REFERENCES services(id) ON DELETE CASCADE, -- NULL means global
     encryption_key TEXT NOT NULL, -- Base64 encoded AES key
     encryption_iv TEXT, -- Base64 encoded IV
     is_enabled BOOLEAN NOT NULL DEFAULT true,

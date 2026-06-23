@@ -27,7 +27,7 @@ public class KafkaEventProducer : IEventProducer, IDisposable
         var config = new ProducerConfig
         {
             BootstrapServers = bootstrapServers,
-            Acks = Acks.Leader, // Balance between durability and performance
+            Acks = Acks.All, // Required when EnableIdempotence = true
             EnableIdempotence = true,
             MaxInFlight = 5,
             LingerMs = 10, // Small batching for better throughput

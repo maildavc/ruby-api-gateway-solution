@@ -22,4 +22,8 @@ public class EndpointPolicy
     public List<string> HeadersToRemove { get; set; } = new();
     public bool EmitEvents { get; set; }
     public string? TopicPrefix { get; set; }
+    
+    // Encryption direction
+    public bool EncryptRequest { get; set; }   // Whether to encrypt request before forwarding
+    public bool EncryptResponse { get; set; }  // Whether to encrypt response back to caller
 }

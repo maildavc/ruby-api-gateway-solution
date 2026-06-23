@@ -7,8 +7,8 @@ using Microsoft.Extensions.Logging;
 namespace Gateway.Infrastructure.BackgroundServices;
 
 /// <summary>
-/// Background service that periodically refreshes policy cache
-/// Ensures hot path never hits database
+/// Background service that periodically refreshes both endpoint policies and client
+/// permission caches so the hot request path never hits the database.
 /// </summary>
 public class PolicyRefreshService : BackgroundService
 {
@@ -37,10 +37,8 @@ public class PolicyRefreshService : BackgroundService
     {
         _logger.LogInformation("PolicyRefreshService starting...");
 
-        // Initial load
         await RefreshAllAsync();
 
-        // Periodic refresh
         using var timer = new PeriodicTimer(_refreshInterval);
         while (!stoppingToken.IsCancellationRequested && await timer.WaitForNextTickAsync(stoppingToken))
         {
@@ -54,31 +52,60 @@ public class PolicyRefreshService : BackgroundService
     {
         try
         {
-            _logger.LogDebug("Refreshing policies and permissions...");
+            _logger.LogDebug("Starting policy and permission refresh...");
 
-            // Refresh endpoint policies
             await _policyResolver.RefreshPoliciesAsync();
-
-            // Refresh client permissions
             await RefreshClientPermissionsAsync();
 
-            _logger.LogDebug("Policy refresh completed successfully");
+            _logger.LogDebug("Policy and permission refresh completed.");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error during policy refresh");
+            _logger.LogError(ex, "Error during policy refresh cycle");
         }
     }
 
+    /// <summary>
+    /// Pre-warms permission cache for every enabled client so the first request
+    /// for each client never has to hit Postgres.
+    /// </summary>
     private async Task RefreshClientPermissionsAsync()
     {
-        // This is a simplified approach - in production, you might want to paginate
-        // For now, we'll cache permissions on-demand rather than pre-loading all clients
-        
-        // Note: Client permissions are cached when JWT is validated
-        // This method could be extended to pre-warm frequently accessed clients
-        
-        _logger.LogDebug("Client permissions refresh completed");
-        await Task.CompletedTask;
+        IEnumerable<Gateway.Core.Entities.Client> clients;
+        try
+        {
+            clients = await _clientRepo.GetAllEnabledAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to load enabled clients for permission pre-warm");
+            return;
+        }
+
+        var refreshed = 0;
+        var failed = 0;
+
+        foreach (var client in clients)
+        {
+            try
+            {
+                var endpointIds = await _permissionRepo.GetAuthorizedEndpointIdsAsync(client.Id);
+                var permSet = new HashSet<Guid>(endpointIds);
+
+                await _cache.SetClientPermissionsAsync(client.Id, permSet, TimeSpan.FromHours(1));
+                await _cache.SetClientAsync(client.ClientId, client, TimeSpan.FromHours(1));
+
+                refreshed++;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to refresh permissions for client {ClientId}", client.ClientId);
+                failed++;
+            }
+        }
+
+        _logger.LogInformation(
+            "Permission pre-warm complete: {Refreshed} clients refreshed, {Failed} failed",
+            refreshed, failed);
     }
 }

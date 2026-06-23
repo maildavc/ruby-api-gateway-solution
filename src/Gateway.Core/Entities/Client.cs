@@ -2,7 +2,7 @@ namespace Gateway.Core.Entities;
 
 public class Client
 {
-    public int Id { get; set; }
+    public Guid Id { get; set; }
     public required string ClientId { get; set; }
     public required string ClientName { get; set; }
     public required string ClientSecret { get; set; } // Hashed

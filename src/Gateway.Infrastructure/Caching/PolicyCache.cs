@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Gateway.Core.Entities;
 using Gateway.Core.Models;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
@@ -18,9 +19,11 @@ public class PolicyCache : IPolicyCache
     private readonly JsonSerializerOptions _jsonOptions;
 
     // L1 cache settings for ultra-fast access
-    private readonly TimeSpan _memoryCacheTtl = TimeSpan.FromMinutes(5);
+    private readonly TimeSpan _memoryCacheTtl = TimeSpan.FromHours(1);
     private const string PolicyKeyPrefix = "policy:";
     private const string PermissionKeyPrefix = "perm:";
+    private const string ClientKeyPrefix = "client:";
+    private const string UserProfileKeyPrefix = "user-profile:";
 
     public PolicyCache(
         IConnectionMultiplexer redis,
@@ -60,7 +63,12 @@ public class PolicyCache : IPolicyCache
                 // Populate L1 cache for next request
                 if (policy != null)
                 {
-                    _memoryCache.Set(cacheKey, policy, _memoryCacheTtl);
+                    var options = new MemoryCacheEntryOptions
+                    {
+                        AbsoluteExpirationRelativeToNow = _memoryCacheTtl,
+                        Size = 1
+                    };
+                    _memoryCache.Set(cacheKey, policy, options);
                 }
                 
                 return policy;
@@ -78,8 +86,13 @@ public class PolicyCache : IPolicyCache
     {
         var cacheKey = $"{PolicyKeyPrefix}{routeKey}";
 
-        // Set in L1 cache (in-memory)
-        _memoryCache.Set(cacheKey, policy, _memoryCacheTtl);
+        // Set in L1 cache (in-memory) with size
+        var cacheEntryOptions = new MemoryCacheEntryOptions
+        {
+            AbsoluteExpirationRelativeToNow = _memoryCacheTtl,
+            Size = 1  // Each policy counts as 1 unit toward the size limit
+        };
+        _memoryCache.Set(cacheKey, policy, cacheEntryOptions);
 
         // Set in L2 cache (ValKey/Redis)
         try
@@ -94,12 +107,12 @@ public class PolicyCache : IPolicyCache
         }
     }
 
-    public async Task<HashSet<int>?> GetClientPermissionsAsync(int clientId)
+    public async Task<HashSet<Guid>?> GetClientPermissionsAsync(Guid clientId)
     {
         var cacheKey = $"{PermissionKeyPrefix}{clientId}";
 
         // Try L1 cache first
-        if (_memoryCache.TryGetValue<HashSet<int>>(cacheKey, out var cachedPerms))
+        if (_memoryCache.TryGetValue<HashSet<Guid>>(cacheKey, out var cachedPerms))
         {
             return cachedPerms;
         }
@@ -112,11 +125,16 @@ public class PolicyCache : IPolicyCache
             
             if (!json.IsNullOrEmpty)
             {
-                var permissions = JsonSerializer.Deserialize<HashSet<int>>(json!, _jsonOptions);
+                var permissions = JsonSerializer.Deserialize<HashSet<Guid>>(json!, _jsonOptions);
                 
                 if (permissions != null)
                 {
-                    _memoryCache.Set(cacheKey, permissions, _memoryCacheTtl);
+                    var options = new MemoryCacheEntryOptions
+                    {
+                        AbsoluteExpirationRelativeToNow = _memoryCacheTtl,
+                        Size = 1
+                    };
+                    _memoryCache.Set(cacheKey, permissions, options);
                 }
                 
                 return permissions;
@@ -130,12 +148,17 @@ public class PolicyCache : IPolicyCache
         return null;
     }
 
-    public async Task SetClientPermissionsAsync(int clientId, HashSet<int> endpointIds, TimeSpan ttl)
+    public async Task SetClientPermissionsAsync(Guid clientId, HashSet<Guid> endpointIds, TimeSpan ttl)
     {
         var cacheKey = $"{PermissionKeyPrefix}{clientId}";
 
-        // Set in L1 cache
-        _memoryCache.Set(cacheKey, endpointIds, _memoryCacheTtl);
+        // Set in L1 cache with size
+        var cacheEntryOptions = new MemoryCacheEntryOptions
+        {
+            AbsoluteExpirationRelativeToNow = _memoryCacheTtl,
+            Size = 1
+        };
+        _memoryCache.Set(cacheKey, endpointIds, cacheEntryOptions);
 
         // Set in L2 cache
         try
@@ -147,6 +170,128 @@ public class PolicyCache : IPolicyCache
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to write permissions to Redis for client {ClientId}", clientId);
+        }
+    }
+
+    public async Task<Client?> GetClientAsync(string clientId)
+    {
+        var cacheKey = $"{ClientKeyPrefix}{clientId}";
+
+        if (_memoryCache.TryGetValue<Client>(cacheKey, out var cachedClient))
+        {
+            return cachedClient;
+        }
+
+        try
+        {
+            var db = _redis.GetDatabase();
+            var json = await db.StringGetAsync(cacheKey);
+
+            if (!json.IsNullOrEmpty)
+            {
+                var client = JsonSerializer.Deserialize<Client>(json!, _jsonOptions);
+                if (client != null)
+                {
+                    var options = new MemoryCacheEntryOptions
+                    {
+                        AbsoluteExpirationRelativeToNow = _memoryCacheTtl,
+                        Size = 1
+                    };
+                    _memoryCache.Set(cacheKey, client, options);
+                }
+
+                return client;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to read client from Redis for client {ClientId}", clientId);
+        }
+
+        return null;
+    }
+
+    public async Task SetClientAsync(string clientId, Client client, TimeSpan ttl)
+    {
+        var cacheKey = $"{ClientKeyPrefix}{clientId}";
+
+        var cacheEntryOptions = new MemoryCacheEntryOptions
+        {
+            AbsoluteExpirationRelativeToNow = _memoryCacheTtl,
+            Size = 1
+        };
+        _memoryCache.Set(cacheKey, client, cacheEntryOptions);
+
+        try
+        {
+            var db = _redis.GetDatabase();
+            var json = JsonSerializer.Serialize(client, _jsonOptions);
+            await db.StringSetAsync(cacheKey, json, ttl);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to write client to Redis for client {ClientId}", clientId);
+        }
+    }
+
+    public async Task<UserProfile?> GetUserProfileAsync(string userId, Guid? serviceId)
+    {
+        var cacheKey = $"{UserProfileKeyPrefix}{userId}:{serviceId?.ToString() ?? "global"}";
+
+        if (_memoryCache.TryGetValue<UserProfile>(cacheKey, out var cachedProfile))
+        {
+            return cachedProfile;
+        }
+
+        try
+        {
+            var db = _redis.GetDatabase();
+            var json = await db.StringGetAsync(cacheKey);
+
+            if (!json.IsNullOrEmpty)
+            {
+                var profile = JsonSerializer.Deserialize<UserProfile>(json!, _jsonOptions);
+                if (profile != null)
+                {
+                    var options = new MemoryCacheEntryOptions
+                    {
+                        AbsoluteExpirationRelativeToNow = _memoryCacheTtl,
+                        Size = 1
+                    };
+                    _memoryCache.Set(cacheKey, profile, options);
+                }
+
+                return profile;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to read user profile from Redis for user {UserId}", userId);
+        }
+
+        return null;
+    }
+
+    public async Task SetUserProfileAsync(string userId, Guid? serviceId, UserProfile profile, TimeSpan ttl)
+    {
+        var cacheKey = $"{UserProfileKeyPrefix}{userId}:{serviceId?.ToString() ?? "global"}";
+
+        var cacheEntryOptions = new MemoryCacheEntryOptions
+        {
+            AbsoluteExpirationRelativeToNow = _memoryCacheTtl,
+            Size = 1
+        };
+        _memoryCache.Set(cacheKey, profile, cacheEntryOptions);
+
+        try
+        {
+            var db = _redis.GetDatabase();
+            var json = JsonSerializer.Serialize(profile, _jsonOptions);
+            await db.StringSetAsync(cacheKey, json, ttl);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to write user profile to Redis for user {UserId}", userId);
         }
     }
 
@@ -185,6 +330,16 @@ public class PolicyCache : IPolicyCache
             }
             
             await foreach (var key in server.KeysAsync(pattern: $"{PermissionKeyPrefix}*"))
+            {
+                await db.KeyDeleteAsync(key);
+            }
+
+            await foreach (var key in server.KeysAsync(pattern: $"{ClientKeyPrefix}*"))
+            {
+                await db.KeyDeleteAsync(key);
+            }
+
+            await foreach (var key in server.KeysAsync(pattern: $"{UserProfileKeyPrefix}*"))
             {
                 await db.KeyDeleteAsync(key);
             }

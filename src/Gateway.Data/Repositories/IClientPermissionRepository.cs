@@ -4,7 +4,7 @@ namespace Gateway.Data.Repositories;
 
 public interface IClientPermissionRepository
 {
-    Task<IEnumerable<ClientPermission>> GetByClientIdAsync(int clientId);
-    Task<bool> HasPermissionAsync(int clientId, int endpointId);
-    Task<IEnumerable<int>> GetAuthorizedEndpointIdsAsync(int clientId);
+    Task<IEnumerable<ClientPermission>> GetByClientIdAsync(Guid clientId);
+    Task<bool> HasPermissionAsync(Guid clientId, Guid endpointId);
+    Task<IEnumerable<Guid>> GetAuthorizedEndpointIdsAsync(Guid clientId);
 }

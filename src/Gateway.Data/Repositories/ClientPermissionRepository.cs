@@ -19,11 +19,11 @@ public class ClientPermissionRepository : IClientPermissionRepository
         _logger = logger;
     }
 
-    public async Task<IEnumerable<ClientPermission>> GetByClientIdAsync(int clientId)
+    public async Task<IEnumerable<ClientPermission>> GetByClientIdAsync(Guid clientId)
     {
         const string sql = @"
             SELECT id, client_id, endpoint_id, is_enabled, created_at, expires_at
-            FROM client_permissions 
+            FROM ""SeaBaasAPIGateway-Core"".client_permissions 
             WHERE client_id = @ClientId 
               AND is_enabled = true
               AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)";
@@ -32,12 +32,12 @@ public class ClientPermissionRepository : IClientPermissionRepository
         return await connection.QueryAsync<ClientPermission>(sql, new { ClientId = clientId });
     }
 
-    public async Task<bool> HasPermissionAsync(int clientId, int endpointId)
+    public async Task<bool> HasPermissionAsync(Guid clientId, Guid endpointId)
     {
         const string sql = @"
             SELECT EXISTS(
                 SELECT 1 
-                FROM client_permissions 
+                FROM ""SeaBaasAPIGateway-Core"".client_permissions 
                 WHERE client_id = @ClientId 
                   AND endpoint_id = @EndpointId
                   AND is_enabled = true
@@ -52,16 +52,16 @@ public class ClientPermissionRepository : IClientPermissionRepository
         );
     }
 
-    public async Task<IEnumerable<int>> GetAuthorizedEndpointIdsAsync(int clientId)
+    public async Task<IEnumerable<Guid>> GetAuthorizedEndpointIdsAsync(Guid clientId)
     {
         const string sql = @"
             SELECT endpoint_id
-            FROM client_permissions 
+            FROM ""SeaBaasAPIGateway-Core"".client_permissions 
             WHERE client_id = @ClientId 
               AND is_enabled = true
               AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)";
 
         using var connection = new NpgsqlConnection(_connectionString);
-        return await connection.QueryAsync<int>(sql, new { ClientId = clientId });
+        return await connection.QueryAsync<Guid>(sql, new { ClientId = clientId });
     }
 }

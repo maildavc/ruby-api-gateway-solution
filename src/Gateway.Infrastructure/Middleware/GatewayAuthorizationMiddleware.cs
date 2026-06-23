@@ -46,6 +46,12 @@ public class GatewayAuthorizationMiddleware
             var path = context.Request.Path.Value ?? "";
             var method = context.Request.Method;
 
+            if (path.StartsWith("/health", StringComparison.OrdinalIgnoreCase))
+            {
+                await _next(context);
+                return;
+            }
+
             // Resolve policy
             var policy = await policyResolver.ResolvePolicyAsync(path, method);
             if (policy == null)
@@ -83,7 +89,15 @@ public class GatewayAuthorizationMiddleware
             // Verify client permissions
             if (!string.IsNullOrEmpty(clientId))
             {
-                var client = await clientRepo.GetByClientIdAsync(clientId);
+                var client = await cache.GetClientAsync(clientId);
+                if (client == null)
+                {
+                    client = await clientRepo.GetByClientIdAsync(clientId);
+                    if (client != null)
+                    {
+                        await cache.SetClientAsync(clientId, client, TimeSpan.FromHours(1));
+                    }
+                }
                 if (client == null)
                 {
                     _logger.LogWarning("Client {ClientId} not found", clientId);
@@ -97,8 +111,8 @@ public class GatewayAuthorizationMiddleware
                 if (permissions == null)
                 {
                     var endpointIds = await permissionRepo.GetAuthorizedEndpointIdsAsync(client.Id);
-                    permissions = new HashSet<int>(endpointIds);
-                    await cache.SetClientPermissionsAsync(client.Id, permissions, TimeSpan.FromMinutes(15));
+                    permissions = new HashSet<Guid>(endpointIds);
+                    await cache.SetClientPermissionsAsync(client.Id, permissions, TimeSpan.FromHours(1));
                 }
 
                 if (!permissions.Contains(policy.Endpoint.Id))

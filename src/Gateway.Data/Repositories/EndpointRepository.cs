@@ -20,7 +20,7 @@ public class EndpointRepository : IEndpointRepository
         _logger = logger;
     }
 
-    public async Task<Endpoint?> GetByIdAsync(int id)
+    public async Task<Endpoint?> GetByIdAsync(Guid id)
     {
         const string sql = @"
             SELECT id, service_id, endpoint_name, http_method, relative_path,
@@ -28,8 +28,9 @@ public class EndpointRepository : IEndpointRepository
                    idempotent_only, request_size_limit_bytes, response_size_limit_bytes,
                    payload_expectation, headers_to_add, headers_to_remove, rate_limit_policy,
                    crypto_algorithm, key_source, iv_source, encoding, require_iv,
+                   encrypt_request, encrypt_response,
                    created_at, updated_at
-            FROM endpoints 
+            FROM ""SeaBaasAPIGateway-Core"".endpoints 
             WHERE id = @Id";
 
         using var connection = new NpgsqlConnection(_connectionString);
@@ -40,7 +41,7 @@ public class EndpointRepository : IEndpointRepository
         );
     }
 
-    public async Task<IEnumerable<Endpoint>> GetByServiceIdAsync(int serviceId, bool enabledOnly = true)
+    public async Task<IEnumerable<Endpoint>> GetByServiceIdAsync(Guid serviceId, bool enabledOnly = true)
     {
         var whereClause = enabledOnly
             ? "WHERE service_id = @ServiceId AND is_enabled = true"
@@ -52,8 +53,9 @@ public class EndpointRepository : IEndpointRepository
                    idempotent_only, request_size_limit_bytes, response_size_limit_bytes,
                    payload_expectation, headers_to_add, headers_to_remove, rate_limit_policy,
                    crypto_algorithm, key_source, iv_source, encoding, require_iv,
+                   encrypt_request, encrypt_response,
                    created_at, updated_at
-            FROM endpoints 
+            FROM ""SeaBaasAPIGateway-Core"".endpoints 
             {whereClause}";
 
         using var connection = new NpgsqlConnection(_connectionString);
@@ -69,8 +71,9 @@ public class EndpointRepository : IEndpointRepository
                    idempotent_only, request_size_limit_bytes, response_size_limit_bytes,
                    payload_expectation, headers_to_add, headers_to_remove, rate_limit_policy,
                    crypto_algorithm, key_source, iv_source, encoding, require_iv,
+                   encrypt_request, encrypt_response,
                    created_at, updated_at
-            FROM endpoints 
+            FROM ""SeaBaasAPIGateway-Core"".endpoints 
             {whereClause}";
 
         using var connection = new NpgsqlConnection(_connectionString);

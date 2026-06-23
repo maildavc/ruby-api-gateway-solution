@@ -4,8 +4,8 @@ namespace Gateway.Core.Entities;
 
 public class Endpoint
 {
-    public int Id { get; set; }
-    public int ServiceId { get; set; }
+    public Guid Id { get; set; }
+    public Guid ServiceId { get; set; }
     public required string EndpointName { get; set; }
     public required string HttpMethod { get; set; } // Comma-separated: GET,POST
     public required string RelativePath { get; set; }
@@ -31,4 +31,8 @@ public class Endpoint
     public IvSource? IvSource { get; set; }
     public Enums.Encoding? Encoding { get; set; }
     public bool? RequireIv { get; set; }
+    
+    // Encryption direction control
+    public bool EncryptRequest { get; set; }   // Whether to encrypt request (rare, usually for outgoing calls)
+    public bool EncryptResponse { get; set; }  // Whether to encrypt response back to caller
 }

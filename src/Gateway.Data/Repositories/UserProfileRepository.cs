@@ -19,13 +19,13 @@ public class UserProfileRepository : IUserProfileRepository
         _logger = logger;
     }
 
-    public async Task<UserProfile?> GetByUserIdAsync(string userId, int? serviceId = null)
+    public async Task<UserProfile?> GetByUserIdAsync(string userId, Guid? serviceId = null)
     {
         // Try service-specific first, then fall back to global
         const string sql = @"
             SELECT id, user_id, service_id, encryption_key, encryption_iv,
                    is_enabled, created_at, updated_at
-            FROM user_profiles 
+            FROM ""SeaBaasAPIGateway-Core"".user_profiles 
             WHERE user_id = @UserId 
               AND (service_id = @ServiceId OR (service_id IS NULL AND @ServiceId IS NOT NULL))
               AND is_enabled = true
@@ -45,7 +45,7 @@ public class UserProfileRepository : IUserProfileRepository
         const string sql = @"
             SELECT id, user_id, service_id, encryption_key, encryption_iv,
                    is_enabled, created_at, updated_at
-            FROM user_profiles 
+            FROM ""SeaBaasAPIGateway-Core"".user_profiles 
             WHERE user_id = @UserId AND is_enabled = true
             ORDER BY service_id NULLS LAST";
 

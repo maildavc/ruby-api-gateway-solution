@@ -1,0 +1,17 @@
+# Authentication
+
+All requests require an API key or JWT token.
+
+## API Key header
+
+```
+x-api-key: <key>
+```
+
+## JWT header
+
+```
+Authorization: Bearer <token>
+```
+
+Rotate keys regularly and scope them to least privilege.

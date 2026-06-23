@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dotnet build *)",
+      "Bash(dotnet test *)",
+      "Bash(dotnet run *)",
+      "Bash(awk '{print $9, $1, $2}')",
+      "Bash(ps -p 751 -o comm,args)",
+      "Bash(psql -h localhost -U gateway -d gateway -c \"SELECT current_database\\(\\);\")",
+      "Bash(psql -h localhost -U postgres -c \"SELECT rolname FROM pg_roles WHERE rolname='gateway';\")",
+      "Bash(psql -h localhost -c \"SELECT rolname FROM pg_roles WHERE rolname='gateway';\")",
+      "Bash(psql -h localhost -U olawoleomotosho -c \"SELECT usename FROM pg_user LIMIT 10;\")",
+        "Bash(psql -h /tmp -d \"SeaBaasAPIGateway-Database\" -c \"SET search_path TO \\\"SeaBaasAPIGateway-Core\\\"; \\\\dt\")"
+    ]
+  }
+}

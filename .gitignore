@@ -48,6 +48,9 @@ x86/
 appsettings.*.json
 !appsettings.json
 !appsettings.Development.json
+docs/test-details.txt
+documents/
+**/secrets*
 
 # Logs
 logs/

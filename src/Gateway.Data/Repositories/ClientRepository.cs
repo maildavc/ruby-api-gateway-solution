@@ -16,12 +16,12 @@ public class ClientRepository : IClientRepository
         _logger = logger;
     }
 
-    public async Task<Client?> GetByIdAsync(int id)
+    public async Task<Client?> GetByIdAsync(Guid id)
     {
         const string sql = @"
             SELECT id, client_id, client_name, client_secret, is_enabled,
                    allowed_ip_addresses, created_at, updated_at, last_accessed_at
-            FROM clients 
+            FROM ""SeaBaasAPIGateway-Core"".clients 
             WHERE id = @Id";
 
         using var connection = new NpgsqlConnection(_connectionString);
@@ -33,7 +33,7 @@ public class ClientRepository : IClientRepository
         const string sql = @"
             SELECT id, client_id, client_name, client_secret, is_enabled,
                    allowed_ip_addresses, created_at, updated_at, last_accessed_at
-            FROM clients 
+            FROM ""SeaBaasAPIGateway-Core"".clients 
             WHERE client_id = @ClientId AND is_enabled = true
             LIMIT 1";
 
@@ -45,10 +45,22 @@ public class ClientRepository : IClientRepository
         );
     }
 
-    public async Task UpdateLastAccessAsync(int id)
+    public async Task<IEnumerable<Client>> GetAllEnabledAsync()
     {
         const string sql = @"
-            UPDATE clients 
+            SELECT id, client_id, client_name, client_secret, is_enabled,
+                   allowed_ip_addresses, created_at, updated_at, last_accessed_at
+            FROM ""SeaBaasAPIGateway-Core"".clients
+            WHERE is_enabled = true";
+
+        using var connection = new NpgsqlConnection(_connectionString);
+        return await connection.QueryAsync<Client>(sql);
+    }
+
+    public async Task UpdateLastAccessAsync(Guid id)
+    {
+        const string sql = @"
+            UPDATE ""SeaBaasAPIGateway-Core"".clients 
             SET last_accessed_at = CURRENT_TIMESTAMP 
             WHERE id = @Id";
 

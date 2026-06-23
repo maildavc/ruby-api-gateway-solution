@@ -96,6 +96,8 @@ services:
     container_name: mock-payhub
     ports:
       - "8081:1080"
+    volumes:
+      - ./mockserver:/config
     environment:
       MOCKSERVER_INITIALIZATION_JSON_PATH: /config/payhub-expectations.json
     networks:

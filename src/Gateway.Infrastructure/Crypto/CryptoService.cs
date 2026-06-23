@@ -6,13 +6,22 @@ using Microsoft.Extensions.Logging;
 namespace Gateway.Infrastructure.Crypto;
 
 /// <summary>
-/// High-performance crypto service using pooled buffers to minimize allocations
-/// Supports AES-256-GCM and AES-256-CBC with HMAC
+/// High-performance crypto service using pooled buffers to minimize allocations.
+///
+/// Wire format (all algorithms prepend the IV/nonce so it can be randomly generated per call):
+///   AES-128-CBC       → [16-byte IV][ciphertext]
+///   AES-256-GCM       → [12-byte nonce][ciphertext][16-byte tag]
+///   AES-256-CBC-HMAC  → [16-byte IV][ciphertext][32-byte HMAC-SHA256(IV || ciphertext)]
 /// </summary>
 public class CryptoService : ICryptoService
 {
     private readonly ILogger<CryptoService> _logger;
-    private const int MaxPayloadSize = 10 * 1024 * 1024; // 10MB safety limit
+    private const int MaxPayloadSize = 10 * 1024 * 1024; // 10 MB
+
+    private const int AesGcmNonceSize = 12;
+    private const int AesGcmTagSize   = 16;
+    private const int AesCbcIvSize    = 16;
+    private const int HmacSize        = 32;
 
     public CryptoService(ILogger<CryptoService> logger)
     {
@@ -21,257 +30,263 @@ public class CryptoService : ICryptoService
 
     public byte[] Decrypt(string encryptedData, CryptoAlgorithm algorithm, string key, string? iv, Encoding encoding)
     {
-        if (algorithm == CryptoAlgorithm.NONE)
-        {
-            return System.Text.Encoding.UTF8.GetBytes(encryptedData);
-        }
+        _logger.LogDebug("Decryption start. Algorithm={Algorithm}, Encoding={Encoding}, DataLength={Length}",
+            algorithm, encoding, encryptedData.Length);
 
-        var keyBytes = DecodeKey(key, encoding);
-        var ivBytes = iv != null ? DecodeIv(iv, encoding) : null;
+        if (algorithm == CryptoAlgorithm.NONE)
+            return System.Text.Encoding.UTF8.GetBytes(encryptedData);
+
+        var keyBytes    = DecodeKey(key, encoding);
         var cipherBytes = DecodeData(encryptedData, encoding);
 
         if (cipherBytes.Length > MaxPayloadSize)
-        {
             throw new InvalidOperationException($"Encrypted payload exceeds maximum size of {MaxPayloadSize} bytes");
-        }
 
         return algorithm switch
         {
-            CryptoAlgorithm.AES_128_CBC => DecryptAesCbc(cipherBytes, keyBytes, ivBytes!),
-            CryptoAlgorithm.AES_256_GCM => DecryptAesGcm(cipherBytes, keyBytes, ivBytes!),
-            CryptoAlgorithm.AES_256_CBC_HMAC => DecryptAesCbcHmac(cipherBytes, keyBytes, ivBytes!),
+            CryptoAlgorithm.AES_128_CBC      => DecryptAesCbc(cipherBytes, keyBytes),
+            CryptoAlgorithm.AES_256_GCM      => DecryptAesGcm(cipherBytes, keyBytes),
+            CryptoAlgorithm.AES_256_CBC_HMAC => DecryptAesCbcHmac(cipherBytes, keyBytes),
             _ => throw new NotSupportedException($"Algorithm {algorithm} not supported")
         };
     }
 
     public string Encrypt(byte[] plainData, CryptoAlgorithm algorithm, string key, string? iv, Encoding encoding)
     {
+        _logger.LogDebug("Encryption start. Algorithm={Algorithm}, Encoding={Encoding}, PlainLength={Length}",
+            algorithm, encoding, plainData.Length);
+
         if (algorithm == CryptoAlgorithm.NONE)
-        {
             return System.Text.Encoding.UTF8.GetString(plainData);
-        }
 
         var keyBytes = DecodeKey(key, encoding);
-        var ivBytes = iv != null ? DecodeIv(iv, encoding) : null;
 
         if (plainData.Length > MaxPayloadSize)
-        {
             throw new InvalidOperationException($"Plain payload exceeds maximum size of {MaxPayloadSize} bytes");
-        }
 
         var cipherBytes = algorithm switch
         {
-            CryptoAlgorithm.AES_128_CBC => EncryptAesCbc(plainData, keyBytes, ivBytes!),
-            CryptoAlgorithm.AES_256_GCM => EncryptAesGcm(plainData, keyBytes, ivBytes!),
-            CryptoAlgorithm.AES_256_CBC_HMAC => EncryptAesCbcHmac(plainData, keyBytes, ivBytes!),
+            CryptoAlgorithm.AES_128_CBC      => EncryptAesCbc(plainData, keyBytes),
+            CryptoAlgorithm.AES_256_GCM      => EncryptAesGcm(plainData, keyBytes),
+            CryptoAlgorithm.AES_256_CBC_HMAC => EncryptAesCbcHmac(plainData, keyBytes),
             _ => throw new NotSupportedException($"Algorithm {algorithm} not supported")
         };
 
         return EncodeData(cipherBytes, encoding);
     }
 
-    public byte[] DecodeKey(string key, Encoding encoding)
-    {
-        return encoding switch
+    public byte[] DecodeKey(string key, Encoding encoding) =>
+        encoding switch
         {
             Encoding.Base64 => Convert.FromBase64String(key),
-            Encoding.Hex => Convert.FromHexString(key),
+            Encoding.Hex    => Convert.FromHexString(key),
             _ => throw new NotSupportedException($"Encoding {encoding} not supported")
         };
-    }
 
     public byte[] DecodeIv(string? iv, Encoding encoding)
     {
         if (string.IsNullOrEmpty(iv))
-        {
             throw new ArgumentException("IV is required but not provided", nameof(iv));
-        }
 
         return encoding switch
         {
             Encoding.Base64 => Convert.FromBase64String(iv),
-            Encoding.Hex => Convert.FromHexString(iv),
+            Encoding.Hex    => Convert.FromHexString(iv),
             _ => throw new NotSupportedException($"Encoding {encoding} not supported")
         };
     }
 
-    private byte[] DecodeData(string data, Encoding encoding)
-    {
-        return encoding switch
+    // ── Private helpers ──────────────────────────────────────────────────────
+
+    private byte[] DecodeData(string data, Encoding encoding) =>
+        encoding switch
         {
             Encoding.Base64 => Convert.FromBase64String(data),
-            Encoding.Hex => Convert.FromHexString(data),
+            Encoding.Hex    => Convert.FromHexString(data),
             _ => throw new NotSupportedException($"Encoding {encoding} not supported")
         };
-    }
 
-    private string EncodeData(byte[] data, Encoding encoding)
-    {
-        return encoding switch
+    private string EncodeData(byte[] data, Encoding encoding) =>
+        encoding switch
         {
             Encoding.Base64 => Convert.ToBase64String(data),
-            Encoding.Hex => Convert.ToHexString(data),
+            Encoding.Hex    => Convert.ToHexString(data),
             _ => throw new NotSupportedException($"Encoding {encoding} not supported")
         };
+
+    // ── AES-256-GCM ─────────────────────────────────────────────────────────
+    // Wire format: [12-byte nonce][ciphertext][16-byte tag]
+
+    private byte[] EncryptAesGcm(byte[] plaintext, byte[] key)
+    {
+        var nonce     = new byte[AesGcmNonceSize];
+        var cipherBuf = ArrayPool<byte>.Shared.Rent(plaintext.Length);
+        var tagBuf    = ArrayPool<byte>.Shared.Rent(AesGcmTagSize);
+
+        RandomNumberGenerator.Fill(nonce);
+
+        try
+        {
+            using var aes = new AesGcm(key, AesGcmTagSize);
+            aes.Encrypt(nonce, plaintext,
+                        cipherBuf.AsSpan(0, plaintext.Length),
+                        tagBuf.AsSpan(0, AesGcmTagSize));
+
+            // [nonce][ciphertext][tag]
+            var result = new byte[AesGcmNonceSize + plaintext.Length + AesGcmTagSize];
+            nonce.CopyTo(result, 0);
+            Array.Copy(cipherBuf, 0, result, AesGcmNonceSize, plaintext.Length);
+            Array.Copy(tagBuf,    0, result, AesGcmNonceSize + plaintext.Length, AesGcmTagSize);
+            return result;
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(cipherBuf, clearArray: true);
+            ArrayPool<byte>.Shared.Return(tagBuf,    clearArray: true);
+        }
     }
 
-    private byte[] DecryptAesGcm(byte[] ciphertext, byte[] key, byte[] nonce)
+    private byte[] DecryptAesGcm(byte[] ciphertext, byte[] key)
     {
-        // AES-GCM: last 16 bytes are tag
-        if (ciphertext.Length < 16)
-        {
+        var minLen = AesGcmNonceSize + AesGcmTagSize;
+        if (ciphertext.Length < minLen)
             throw new CryptographicException("Ciphertext too short for AES-GCM");
-        }
 
-        var tagLength = 16;
-        var cipherLength = ciphertext.Length - tagLength;
-        
-        var tag = ciphertext[cipherLength..];
-        var cipher = ciphertext[..cipherLength];
-        
-        // Use ArrayPool to minimize allocations
-        var plaintext = ArrayPool<byte>.Shared.Rent(cipherLength);
+        var nonce       = ciphertext[..AesGcmNonceSize];
+        var tagOffset   = ciphertext.Length - AesGcmTagSize;
+        var tag         = ciphertext[tagOffset..];
+        var cipher      = ciphertext[AesGcmNonceSize..tagOffset];
+        var plaintextBuf = ArrayPool<byte>.Shared.Rent(cipher.Length);
+
         try
         {
-            using var aes = new AesGcm(key, tagLength);
-            aes.Decrypt(nonce, cipher, tag, plaintext.AsSpan(0, cipherLength));
-            
-            // Copy to exact-sized array
-            var result = new byte[cipherLength];
-            Array.Copy(plaintext, result, cipherLength);
+            using var aes = new AesGcm(key, AesGcmTagSize);
+            aes.Decrypt(nonce, cipher, tag, plaintextBuf.AsSpan(0, cipher.Length));
+
+            var result = new byte[cipher.Length];
+            Array.Copy(plaintextBuf, result, cipher.Length);
             return result;
         }
         finally
         {
-            ArrayPool<byte>.Shared.Return(plaintext, clearArray: true);
+            ArrayPool<byte>.Shared.Return(plaintextBuf, clearArray: true);
         }
     }
 
-    private byte[] EncryptAesGcm(byte[] plaintext, byte[] key, byte[] nonce)
+    // ── AES-128-CBC ──────────────────────────────────────────────────────────
+    // Wire format: [16-byte IV][ciphertext]
+
+    private byte[] EncryptAesCbc(byte[] plaintext, byte[] key)
     {
-        var tagLength = 16;
-        var ciphertext = ArrayPool<byte>.Shared.Rent(plaintext.Length);
-        var tag = ArrayPool<byte>.Shared.Rent(tagLength);
-        
-        try
-        {
-            using var aes = new AesGcm(key, tagLength);
-            aes.Encrypt(nonce, plaintext, ciphertext.AsSpan(0, plaintext.Length), tag.AsSpan(0, tagLength));
-            
-            // Concatenate ciphertext + tag
-            var result = new byte[plaintext.Length + tagLength];
-            Array.Copy(ciphertext, 0, result, 0, plaintext.Length);
-            Array.Copy(tag, 0, result, plaintext.Length, tagLength);
-            
-            return result;
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(ciphertext, clearArray: true);
-            ArrayPool<byte>.Shared.Return(tag, clearArray: true);
-        }
-    }
+        var iv = new byte[AesCbcIvSize];
+        RandomNumberGenerator.Fill(iv);
 
-    private byte[] DecryptAesCbcHmac(byte[] ciphertext, byte[] key, byte[] iv)
-    {
-        // Split key: first 32 bytes for AES, last 32 bytes for HMAC
-        if (key.Length < 64)
-        {
-            throw new CryptographicException("Key must be at least 64 bytes for AES-CBC-HMAC");
-        }
-
-        var aesKey = key[..32];
-        var hmacKey = key[32..64];
-        
-        // Last 32 bytes are HMAC
-        if (ciphertext.Length < 32)
-        {
-            throw new CryptographicException("Ciphertext too short for HMAC verification");
-        }
-
-        var hmacLength = 32;
-        var cipherLength = ciphertext.Length - hmacLength;
-        var receivedHmac = ciphertext[cipherLength..];
-        var cipher = ciphertext[..cipherLength];
-
-        // Verify HMAC
-        using var hmac = new HMACSHA256(hmacKey);
-        var computedHmac = hmac.ComputeHash(cipher);
-        
-        if (!CryptographicOperations.FixedTimeEquals(receivedHmac, computedHmac))
-        {
-            throw new CryptographicException("HMAC verification failed");
-        }
-
-        // Decrypt with AES-CBC
         using var aes = Aes.Create();
-        aes.Key = aesKey;
-        aes.IV = iv;
-        aes.Mode = CipherMode.CBC;
+        aes.Key     = key;
+        aes.IV      = iv;
+        aes.Mode    = CipherMode.CBC;
+        aes.Padding = PaddingMode.PKCS7;
+
+        using var encryptor = aes.CreateEncryptor();
+        var ciphertext = encryptor.TransformFinalBlock(plaintext, 0, plaintext.Length);
+
+        // [IV][ciphertext]
+        var result = new byte[AesCbcIvSize + ciphertext.Length];
+        iv.CopyTo(result, 0);
+        Array.Copy(ciphertext, 0, result, AesCbcIvSize, ciphertext.Length);
+        return result;
+    }
+
+    private byte[] DecryptAesCbc(byte[] ciphertext, byte[] key)
+    {
+        if (ciphertext.Length < AesCbcIvSize)
+            throw new CryptographicException("Ciphertext too short for AES-CBC");
+
+        var iv     = ciphertext[..AesCbcIvSize];
+        var cipher = ciphertext[AesCbcIvSize..];
+
+        using var aes = Aes.Create();
+        aes.Key     = key;
+        aes.IV      = iv;
+        aes.Mode    = CipherMode.CBC;
         aes.Padding = PaddingMode.PKCS7;
 
         using var decryptor = aes.CreateDecryptor();
         return decryptor.TransformFinalBlock(cipher, 0, cipher.Length);
     }
 
-    private byte[] DecryptAesCbc(byte[] ciphertext, byte[] key, byte[] iv)
-    {
-        // Standard AES-CBC decryption (for AES-128 with 16-byte key)
-        using var aes = Aes.Create();
-        aes.Key = key;
-        aes.IV = iv;
-        aes.Mode = CipherMode.CBC;
-        aes.Padding = PaddingMode.PKCS7;
+    // ── AES-256-CBC-HMAC ─────────────────────────────────────────────────────
+    // Wire format: [16-byte IV][ciphertext][32-byte HMAC-SHA256(IV || ciphertext)]
+    // Key split: first 32 bytes = AES key, next 32 bytes = HMAC key
 
-        using var decryptor = aes.CreateDecryptor();
-        return decryptor.TransformFinalBlock(ciphertext, 0, ciphertext.Length);
-    }
-
-    private byte[] EncryptAesCbc(byte[] plaintext, byte[] key, byte[] iv)
-    {
-        // Standard AES-CBC encryption (for AES-128 with 16-byte key)
-        using var aes = Aes.Create();
-        aes.Key = key;
-        aes.IV = iv;
-        aes.Mode = CipherMode.CBC;
-        aes.Padding = PaddingMode.PKCS7;
-
-        using var encryptor = aes.CreateEncryptor();
-        return encryptor.TransformFinalBlock(plaintext, 0, plaintext.Length);
-    }
-
-    private byte[] EncryptAesCbcHmac(byte[] plaintext, byte[] key, byte[] iv)
+    private byte[] EncryptAesCbcHmac(byte[] plaintext, byte[] key)
     {
         if (key.Length < 64)
-        {
-            throw new CryptographicException("Key must be at least 64 bytes for AES-CBC-HMAC");
-        }
+            throw new CryptographicException("Key must be at least 64 bytes for AES-256-CBC-HMAC");
 
-        var aesKey = key[..32];
+        var aesKey  = key[..32];
         var hmacKey = key[32..64];
 
-        // Encrypt with AES-CBC
+        var iv = new byte[AesCbcIvSize];
+        RandomNumberGenerator.Fill(iv);
+
         using var aes = Aes.Create();
-        aes.Key = aesKey;
-        aes.IV = iv;
-        aes.Mode = CipherMode.CBC;
+        aes.Key     = aesKey;
+        aes.IV      = iv;
+        aes.Mode    = CipherMode.CBC;
         aes.Padding = PaddingMode.PKCS7;
 
         byte[] ciphertext;
         using (var encryptor = aes.CreateEncryptor())
-        {
             ciphertext = encryptor.TransformFinalBlock(plaintext, 0, plaintext.Length);
-        }
 
-        // Compute HMAC over ciphertext
+        // HMAC covers IV + ciphertext to prevent IV tampering
         using var hmac = new HMACSHA256(hmacKey);
-        var hmacValue = hmac.ComputeHash(ciphertext);
+        hmac.TransformBlock(iv,         0, iv.Length,         null, 0);
+        hmac.TransformFinalBlock(ciphertext, 0, ciphertext.Length);
+        var hmacValue = hmac.Hash!;
 
-        // Concatenate ciphertext + HMAC
-        var result = new byte[ciphertext.Length + hmacValue.Length];
-        Array.Copy(ciphertext, 0, result, 0, ciphertext.Length);
-        Array.Copy(hmacValue, 0, result, ciphertext.Length, hmacValue.Length);
-
+        // [IV][ciphertext][HMAC]
+        var result = new byte[AesCbcIvSize + ciphertext.Length + HmacSize];
+        iv.CopyTo(result, 0);
+        Array.Copy(ciphertext, 0, result, AesCbcIvSize, ciphertext.Length);
+        Array.Copy(hmacValue,  0, result, AesCbcIvSize + ciphertext.Length, HmacSize);
         return result;
+    }
+
+    private byte[] DecryptAesCbcHmac(byte[] ciphertext, byte[] key)
+    {
+        if (key.Length < 64)
+            throw new CryptographicException("Key must be at least 64 bytes for AES-256-CBC-HMAC");
+
+        var minLen = AesCbcIvSize + HmacSize;
+        if (ciphertext.Length < minLen)
+            throw new CryptographicException("Ciphertext too short for AES-256-CBC-HMAC");
+
+        var aesKey  = key[..32];
+        var hmacKey = key[32..64];
+
+        var iv           = ciphertext[..AesCbcIvSize];
+        var hmacOffset   = ciphertext.Length - HmacSize;
+        var receivedHmac = ciphertext[hmacOffset..];
+        var cipher       = ciphertext[AesCbcIvSize..hmacOffset];
+
+        // Verify HMAC(IV || ciphertext) in constant time
+        using var hmac = new HMACSHA256(hmacKey);
+        hmac.TransformBlock(iv,     0, iv.Length,     null, 0);
+        hmac.TransformFinalBlock(cipher, 0, cipher.Length);
+        var computedHmac = hmac.Hash!;
+
+        if (!CryptographicOperations.FixedTimeEquals(receivedHmac, computedHmac))
+            throw new CryptographicException("HMAC verification failed");
+
+        using var aes = Aes.Create();
+        aes.Key     = aesKey;
+        aes.IV      = iv;
+        aes.Mode    = CipherMode.CBC;
+        aes.Padding = PaddingMode.PKCS7;
+
+        using var decryptor = aes.CreateDecryptor();
+        return decryptor.TransformFinalBlock(cipher, 0, cipher.Length);
     }
 }
